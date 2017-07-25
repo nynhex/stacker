@@ -6,6 +6,7 @@ import yaml
 from .default import (
     Provider as AWSProvider,
     retry_on_throttling,
+    template_args,
 )
 from ... import exceptions
 from ...actions.diff import (
@@ -207,19 +208,17 @@ def wait_till_change_set_complete(cfn_client, change_set_id, try_count=25,
     return response
 
 
-def create_change_set(cfn_client, fqn, template_url, parameters, tags,
+def create_change_set(cfn_client, fqn, template, parameters, tags,
                       replacements_only=False):
     logger.debug("Attempting to create change set for stack: %s.", fqn)
-    response = retry_on_throttling(
-        cfn_client.create_change_set,
-        kwargs={
-            'StackName': fqn,
-            'TemplateURL': template_url,
+    args = {'StackName': fqn,
             'Parameters': parameters,
             'Tags': tags,
             'Capabilities': ["CAPABILITY_NAMED_IAM"],
-            'ChangeSetName': get_change_set_name(),
-        },
+            'ChangeSetName': get_change_set_name()}
+    response = retry_on_throttling(
+        cfn_client.create_change_set,
+        kwargs=dict(args, **template_args(template))
     )
     change_set_id = response["Id"]
     response = wait_till_change_set_complete(
@@ -255,10 +254,10 @@ class Provider(AWSProvider):
         self.replacements_only = replacements_only
         super(Provider, self).__init__(region=region, *args, **kwargs)
 
-    def update_stack(self, fqn, template_url, old_parameters, parameters,
+    def update_stack(self, fqn, template, old_parameters, parameters,
                      tags, diff=False, **kwargs):
         changes, change_set_id = create_change_set(self.cloudformation, fqn,
-                                                   template_url, parameters,
+                                                   template, parameters,
                                                    tags, **kwargs)
         params_diff = diff_parameters(
             AWSProvider.params_as_dict(old_parameters),
